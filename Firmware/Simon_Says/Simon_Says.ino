@@ -75,34 +75,12 @@ void setup()
   pinMode(BUZZER1, OUTPUT);
   pinMode(BUZZER2, OUTPUT);
 
-  //Mode checking
-  gameMode = MODE_MEMORY; // By default, we're going to play the memory game
-
-  // Check to see if the lower right button is pressed
-  if (checkButton() == CHOICE_YELLOW) play_beegees();
-
-  // Check to see if upper right button is pressed
-  if (checkButton() == CHOICE_GREEN)
-  {
-    gameMode = MODE_BATTLE; //Put game into battle mode
-
-    //Turn on the upper right (green) LED
-    setLEDs(CHOICE_GREEN);
-    toner(CHOICE_GREEN, 150);
-
-    setLEDs(CHOICE_RED | CHOICE_BLUE | CHOICE_YELLOW); // Turn on the other LEDs until you release button
-
-    while(checkButton() != CHOICE_NONE) ; // Wait for user to stop pressing button
-
-    //Now do nothing. Battle mode will be serviced in the main routine
-  }
-
-  play_winner(); // After setup is complete, say hello to the world
+  play_greeting(); // After setup is complete, say hello to the world
 }
 
 void loop()
 {
-  attractMode(); // Blink lights while waiting for user to press a button
+  byte button = attractMode(); // Blink lights while waiting for user to press a button
 
   // Indicate the start of game play
   setLEDs(CHOICE_RED | CHOICE_GREEN | CHOICE_BLUE | CHOICE_YELLOW); // Turn all LEDs on
@@ -110,20 +88,28 @@ void loop()
   setLEDs(CHOICE_OFF); // Turn off LEDs
   delay(250);
 
-  if (gameMode == MODE_MEMORY)
-  {
+  switch (button) {
+  case CHOICE_RED:
     // Play memory game and handle result
     if (play_memory() == true) 
-      play_winner(); // Player won, play winner tones
+      play_march(); // Player won, play winner tones
     else 
       play_loser(); // Player lost, play loser tones
-  }
+    break;
 
-  if (gameMode == MODE_BATTLE)
-  {
+  case CHOICE_GREEN:
     play_battle(); // Play game until someone loses
 
     play_loser(); // Player lost, play loser tones
+    break;
+    
+  case CHOICE_BLUE:
+    play_getlucky();
+    break;
+    
+  case CHOICE_YELLOW:
+    play_beegees();
+    break;
   }
 }
 
@@ -273,12 +259,14 @@ byte wait_for_button(void)
 // Returns a '1' bit in the position corresponding to CHOICE_RED, CHOICE_GREEN, etc.
 byte checkButton(void)
 {
-  if (digitalRead(BUTTON_RED) == 0) return(CHOICE_RED); 
-  else if (digitalRead(BUTTON_GREEN) == 0) return(CHOICE_GREEN); 
-  else if (digitalRead(BUTTON_BLUE) == 0) return(CHOICE_BLUE); 
-  else if (digitalRead(BUTTON_YELLOW) == 0) return(CHOICE_YELLOW);
+  byte choice = 0;
+
+  if (digitalRead(BUTTON_RED) == 0) choice |= CHOICE_RED; 
+  else if (digitalRead(BUTTON_GREEN) == 0) choice |= CHOICE_GREEN; 
+  else if (digitalRead(BUTTON_BLUE) == 0) choice |= CHOICE_BLUE; 
+  else if (digitalRead(BUTTON_YELLOW) == 0) choice |= CHOICE_YELLOW;
   
-  return(CHOICE_NONE); // If no button is pressed, return none
+  return choice;
 }
 
 // Light an LED and play tone
@@ -294,16 +282,16 @@ void toner(byte which, int buzz_length_ms)
   switch(which) 
   {
   case CHOICE_RED:
-    buzz_sound(buzz_length_ms, 1136); 
+    playNote(4, 0, buzz_length_ms);
     break;
   case CHOICE_GREEN:
-    buzz_sound(buzz_length_ms, 568); 
+    playNote(4, 1, buzz_length_ms);
     break;
   case CHOICE_BLUE:
-    buzz_sound(buzz_length_ms, 851); 
+    playNote(4, 3, buzz_length_ms);
     break;
   case CHOICE_YELLOW:
-    buzz_sound(buzz_length_ms, 638); 
+    playNote(4, 7, buzz_length_ms);
     break;
   }
 
@@ -311,43 +299,28 @@ void toner(byte which, int buzz_length_ms)
 }
 
 // Toggle buzzer every buzz_delay_us, for a duration of buzz_length_ms.
-void buzz_sound(int buzz_length_ms, int buzz_delay_us)
+void buzz_sound(int buzz_length_ms, unsigned int freq)
 {
-  // Convert total play time from milliseconds to microseconds
-  long buzz_length_us = buzz_length_ms * (long)1000;
-
-  // Loop until the remaining play time is less than a single buzz_delay_us
-  while (buzz_length_us > (buzz_delay_us * 2))
-  {
-    buzz_length_us -= buzz_delay_us * 2; //Decrease the remaining play time
-
-    // Toggle the buzzer at various speeds
-    digitalWrite(BUZZER1, LOW);
-    digitalWrite(BUZZER2, HIGH);
-    delayMicroseconds(buzz_delay_us);
-
-    digitalWrite(BUZZER1, HIGH);
-    digitalWrite(BUZZER2, LOW);
-    delayMicroseconds(buzz_delay_us);
-  }
+  tone(BUZZER2, freq, buzz_length_ms);
+  delay(buzz_length_ms);
 }
 
 // Play the winner sound and lights
-void play_winner(void)
+void play_greeting(void)
 {
   setLEDs(CHOICE_GREEN | CHOICE_BLUE);
-  winner_sound();
+  greeting_sound();
   setLEDs(CHOICE_RED | CHOICE_YELLOW);
-  winner_sound();
+  greeting_sound();
   setLEDs(CHOICE_GREEN | CHOICE_BLUE);
-  winner_sound();
+  greeting_sound();
   setLEDs(CHOICE_RED | CHOICE_YELLOW);
-  winner_sound();
+  greeting_sound();
 }
 
 // Play the winner sound
 // This is just a unique (annoying) sound we came up with, there is no magic to it
-void winner_sound(void)
+void greeting_sound(void)
 {
   // Toggle the buzzer at various speeds
   for (byte x = 250 ; x > 70 ; x--)
@@ -355,11 +328,9 @@ void winner_sound(void)
     for (byte y = 0 ; y < 3 ; y++)
     {
       digitalWrite(BUZZER2, HIGH);
-      digitalWrite(BUZZER1, LOW);
       delayMicroseconds(x);
 
       digitalWrite(BUZZER2, LOW);
-      digitalWrite(BUZZER1, HIGH);
       delayMicroseconds(x);
     }
   }
@@ -369,96 +340,246 @@ void winner_sound(void)
 void play_loser(void)
 {
   setLEDs(CHOICE_RED | CHOICE_GREEN);
-  buzz_sound(255, 1500);
+  buzz_sound(255, 220);
 
   setLEDs(CHOICE_BLUE | CHOICE_YELLOW);
-  buzz_sound(255, 1500);
+  buzz_sound(255, 220);
 
   setLEDs(CHOICE_RED | CHOICE_GREEN);
-  buzz_sound(255, 1500);
+  buzz_sound(255, 220);
 
   setLEDs(CHOICE_BLUE | CHOICE_YELLOW);
-  buzz_sound(255, 1500);
+  buzz_sound(255, 220);
 }
 
 // Show an "attract mode" display while waiting for user to press button.
-void attractMode(void)
+byte attractMode(void)
 {
-  while(1) 
-  {
-    setLEDs(CHOICE_RED);
-    delay(100);
-    if (checkButton() != CHOICE_NONE) return;
+  byte led = 0;
+  byte button = 0;
 
-    setLEDs(CHOICE_BLUE);
+  for (; button == 0;) {
+    setLEDs(1 << led);
     delay(100);
-    if (checkButton() != CHOICE_NONE) return;
-
-    setLEDs(CHOICE_GREEN);
-    delay(100);
-    if (checkButton() != CHOICE_NONE) return;
-
-    setLEDs(CHOICE_YELLOW);
-    delay(100);
-    if (checkButton() != CHOICE_NONE) return;
+    button = checkButton();
+    led = (led + 1) % 4;
   }
+  
+  return button;
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // The following functions are related to Beegees Easter Egg only
 
-// Notes in the melody. Each note is about an 1/8th note, "0"s are rests.
-int melody[] = {
-  NOTE_G4, NOTE_A4, 0, NOTE_C5, 0, 0, NOTE_G4, 0, 0, 0,
-  NOTE_E4, 0, NOTE_D4, NOTE_E4, NOTE_G4, 0,
-  NOTE_D4, NOTE_E4, 0, NOTE_G4, 0, 0,
-  NOTE_D4, 0, NOTE_E4, 0, NOTE_G4, 0, NOTE_A4, 0, NOTE_C5, 0};
+const unsigned int freqs[] = {
+  3520, // A
+  3729, // A#
+  3951, // B
+  2093, // C
+  2217, // C#
+  2349, // D
+  2489, // D#
+  2637, // E
+  2794, // F
+  2960, // F#
+  3136, // G
+  3322, // G#
+};
 
-int noteDuration = 115; // This essentially sets the tempo, 115 is just about right for a disco groove :)
-int LEDnumber = 0; // Keeps track of which LED we are on during the beegees loop
+const int scale[] = {
+  0, 2, 3, 5, 7, 8, 10
+};
+
+void
+playNote(int octave, int note, int duration)
+{
+  unsigned int freq;
+  int i;
+
+  if (note >= 0) {
+    freq = freqs[note];
+    for (i = octave; i < 7; i += 1) {
+      freq /= 2;
+    }
+    
+    tone(BUZZER2, freq, duration);
+    setLEDs(note + 1);
+  }
+  delay(duration);
+  setLEDs(0);
+}
+
+void
+play(int bpm, char *tune)
+{
+  unsigned int baseDuration = 60000 / bpm;
+  int duration = baseDuration;
+  int baseOctave = 4;
+  int octave = baseOctave;
+  
+  int note = -2;
+
+  char *p = tune;
+  
+  digitalWrite(BUZZER1, LOW); // setup the "BUZZER1" side of the buzzer to stay low, while we play the tone on the other pin.
+  for (; *p; p += 1) {
+    boolean playNow = false;
+    
+    switch (*p) {
+    case '>':
+      octave = baseOctave + 1;
+      break;
+    case '<':
+      octave = baseOctave - 1;
+      break;
+    case 'A':
+    case 'B':
+    case 'C':
+    case 'D':
+    case 'E':
+    case 'F':
+    case 'G':
+      playNow = true;
+      note = scale[*p - 'A'];
+      break;
+    case 'a':
+    case 'b':
+    case 'c':
+    case 'd':
+    case 'e':
+    case 'f':
+    case 'g':
+      playNow = true;
+      octave += 1;
+      note = scale[*p - 'a'];
+      break;
+    case '_':
+      playNow = true;
+      note = -1;
+      break;
+    }
+    
+    // Check for sharps or flats
+    switch (*(p+1)) {
+    case '#':
+    case '+':
+      note += 1;
+      if (note == 12) {
+        octave += 1;
+        note = 0;
+      }
+      p += 1;
+      break;
+    case '-':
+      note -= 1;
+      if (note == -1) {
+        octave -= 1;
+        note = 11;
+      }
+      p += 1;
+      break;
+    }
+    
+    // Check for octave
+    switch (*(p+1)) {
+    case ',':
+      octave -= 1;
+      p += 1;
+      break;
+    case '\'':
+      octave += 1;
+      p += 1;
+      break;
+    }
+    
+    // Check for duration
+    switch (*(p+1)) {
+    case '2':
+      duration *= 2;
+      p += 1;
+      break;
+    case '4':
+      duration *= 4;
+      p += 1;
+      break;
+    case '.':
+      duration += duration / 2;
+      p += 1;
+      break;
+    }
+    
+    if (playNow) {
+      playNote(octave, note, duration);
+      note = -1;
+      octave = baseOctave;
+      duration = baseDuration;
+    }
+    
+    if (checkButton()) {
+      noTone(BUZZER2);
+      return;
+    }
+  }
+  if (note >= 0) {
+    playNote(octave, note, duration);
+  }
+  noTone(BUZZER2);
+}
 
 // Do nothing but play bad beegees music
 // This function is activated when user holds bottom right button during power up
 void play_beegees()
 {
-  //Turn on the bottom right (yellow) LED
-  setLEDs(CHOICE_YELLOW);
-  toner(CHOICE_YELLOW, 150);
-
-  setLEDs(CHOICE_RED | CHOICE_GREEN | CHOICE_BLUE); // Turn on the other LEDs until you release button
-
-  while(checkButton() != CHOICE_NONE) ; // Wait for user to stop pressing button
-
-  setLEDs(CHOICE_NONE); // Turn off LEDs
-
-  delay(1000); // Wait a second before playing song
-  
-  digitalWrite(BUZZER1, LOW); // setup the "BUZZER1" side of the buzzer to stay low, while we play the tone on the other pin.
-
-  while(checkButton() == CHOICE_NONE) //Play song until you press a button
-  {
-    // iterate over the notes of the melody:
-    for (int thisNote = 0; thisNote < 32; thisNote++) {
-      changeLED();
-      tone(BUZZER2, melody[thisNote],noteDuration);
-      // to distinguish the notes, set a minimum time between them.
-      // the note's duration + 30% seems to work well:
-      int pauseBetweenNotes = noteDuration * 1.30;
-      delay(pauseBetweenNotes);
-      // stop the tone playing:
-      noTone(BUZZER2);
-    }
+  while(checkButton() == CHOICE_NONE) {
+    play(104 * 4, "E-F_a-__E-2__C_B-,CE-_B-,C_E-__B-,_C_E-_F_a-_");
   }
 }
 
-// Each time this function is called the board moves to the next LED
-void changeLED(void)
+void lplay(unsigned int tempo, char *tune, int count)
 {
-  setLEDs(1 << LEDnumber); // Change the LED
-
-  LEDnumber++; // Goto the next LED
-  if(LEDnumber > 3) LEDnumber = 0; // Wrap the counter if needed
+  int i;
+  
+  for (i = 0; i < count; i += 1) {
+    play(tempo * 3, tune);
+  }
 }
 
 
+void play_march()
+{
+  const int tempo = 80;
+  
+  lplay(tempo * 4, "GB-,D", 6);
+  lplay(tempo * 4, "GB-,D", 6);
+  lplay(tempo * 4, "GB-,D", 6);
+  lplay(tempo * 4, "E-G-,B-,", 5);
+  play(tempo * 4, "B-");
+  lplay(tempo * 4, "GB-,D", 6);
+  lplay(tempo * 4, "E-G-,B-,", 5);
+  play(tempo * 4, "B-");
+  lplay(tempo * 4, "GB-,D", 6);
+  lplay(tempo * 4, "GB-,D", 6);
+  
+  lplay(tempo * 4, "dGB-", 6);
+  lplay(tempo * 4, "dGB-", 6);
+  lplay(tempo * 4, "dGB-", 6);
+  lplay(tempo * 4, "e-G-B-", 5);
+  play(tempo * 4, "B-");
+  lplay(tempo * 4, "G-B-,F", 6);
+  lplay(tempo * 4, "E-G-,B-,", 5);
+  play(tempo * 4, "B-");
+  lplay(tempo * 4, "GB-,D", 6);
+  lplay(tempo * 4, "GB-,D", 6);
+  
+  return;
+}
 
+void play_getlucky()
+{
+  while (checkButton() == CHOICE_NONE) {
+    play(116 * 4, ("_______B__B_A_F+_"
+                   "_______d__d_c+_A_"
+                   "_______f+__f+_e_c+_"
+                   "_______e__e_d_B_"));
+  }
+}
